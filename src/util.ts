@@ -2,7 +2,7 @@
 
 import { EditorState, NodeSelection, PluginKey } from 'prosemirror-state';
 
-import { Attrs, Node, ResolvedPos } from 'prosemirror-model';
+import { Node, ResolvedPos } from 'prosemirror-model';
 import { CellSelection } from './cellselection';
 import { tableNodeTypes } from './schema';
 import { Rect, TableMap } from './tablemap';
@@ -16,9 +16,7 @@ export type MutableAttrs = Record<string, unknown>;
  * @public
  */
 export interface CellAttrs {
-  colspan: number;
-  rowspan: number;
-  colwidth: number[] | null;
+  width: string;
 }
 
 /**
@@ -151,32 +149,6 @@ export function nextCell(
 
   const moved = map.nextCell($pos.pos - tableStart, axis, dir);
   return moved == null ? null : $pos.node(0).resolve(tableStart + moved);
-}
-
-/**
- * @public
- */
-export function removeColSpan(attrs: CellAttrs, pos: number, n = 1): CellAttrs {
-  const result: CellAttrs = { ...attrs, colspan: attrs.colspan - n };
-
-  if (result.colwidth) {
-    result.colwidth = result.colwidth.slice();
-    result.colwidth.splice(pos, n);
-    if (!result.colwidth.some((w) => w > 0)) result.colwidth = null;
-  }
-  return result;
-}
-
-/**
- * @public
- */
-export function addColSpan(attrs: CellAttrs, pos: number, n = 1): Attrs {
-  const result = { ...attrs, colspan: attrs.colspan + n };
-  if (result.colwidth) {
-    result.colwidth = result.colwidth.slice();
-    for (let i = 0; i < n; i++) result.colwidth.splice(pos, 0, 0);
-  }
-  return result;
 }
 
 /**

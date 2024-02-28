@@ -10,17 +10,12 @@ import {
 
 import { CellSelection } from './cellselection';
 import type { Direction } from './input';
-import { tableNodeTypes, TableRole } from './schema';
+import { tableNodeTypes } from './schema';
 import { Rect, TableMap } from './tablemap';
 import {
-  addColSpan,
-  cellAround,
-  CellAttrs,
-  cellWrapping,
   columnIsHeader,
   isInTable,
   moveCellForward,
-  removeColSpan,
   selectionCell,
 } from './util';
 
@@ -73,25 +68,13 @@ export function addColumn(
 
   for (let row = 0; row < map.height; row++) {
     const index = row * map.width + col;
-    // If this position falls inside a col-spanning cell
-    if (col > 0 && col < map.width && map.map[index - 1] == map.map[index]) {
-      const pos = map.map[index];
-      const cell = table.nodeAt(pos)!;
-      tr.setNodeMarkup(
-        tr.mapping.map(tableStart + pos),
-        null,
-        addColSpan(cell.attrs as CellAttrs, col - map.colCount(pos)),
-      );
-      // Skip ahead if rowspan > 1
-      row += cell.attrs.rowspan - 1;
-    } else {
-      const type =
-        refColumn == null
-          ? tableNodeTypes(table.type.schema).cell
-          : table.nodeAt(map.map[index + refColumn])!.type;
-      const pos = map.positionAt(row, col, table);
-      tr.insert(tr.mapping.map(tableStart + pos), type.createAndFill()!);
-    }
+
+    const type =
+      refColumn == null
+        ? tableNodeTypes(table.type.schema).cell
+        : table.nodeAt(map.map[index + refColumn])!.type;
+    const pos = map.positionAt(row, col, table);
+    tr.insert(tr.mapping.map(tableStart + pos), type.createAndFill()!);
   }
   return tr;
 }
@@ -139,26 +122,14 @@ export function removeColumn(
   col: number,
 ) {
   const mapStart = tr.mapping.maps.length;
-  for (let row = 0; row < map.height; ) {
+
+  for (let row = 0; row < map.height; row++) {
     const index = row * map.width + col;
     const pos = map.map[index];
     const cell = table.nodeAt(pos)!;
-    const attrs = cell.attrs as CellAttrs;
-    // If this is part of a col-spanning cell
-    if (
-      (col > 0 && map.map[index - 1] == pos) ||
-      (col < map.width - 1 && map.map[index + 1] == pos)
-    ) {
-      tr.setNodeMarkup(
-        tr.mapping.slice(mapStart).map(tableStart + pos),
-        null,
-        removeColSpan(attrs, col - map.colCount(pos)),
-      );
-    } else {
-      const start = tr.mapping.slice(mapStart).map(tableStart + pos);
-      tr.delete(start, start + cell.nodeSize);
-    }
-    row += attrs.rowspan;
+    const start = tr.mapping.slice(mapStart).map(tableStart + pos);
+
+    tr.delete(start, start + cell.nodeSize);
   }
 }
 
@@ -179,6 +150,7 @@ export function deleteColumn(
     for (let i = rect.right - 1; ; i--) {
       removeColumn(tr, rect, i);
       if (i == rect.left) break;
+
       const table = rect.tableStart
         ? tr.doc.nodeAt(rect.tableStart - 1)
         : tr.doc;
@@ -219,27 +191,12 @@ export function addRow(
   if (rowIsHeader(map, table, row + refRow))
     refRow = row == 0 || row == map.height ? null : 0;
   for (let col = 0, index = map.width * row; col < map.width; col++, index++) {
-    // Covered by a rowspan cell
-    if (
-      row > 0 &&
-      row < map.height &&
-      map.map[index] == map.map[index - map.width]
-    ) {
-      const pos = map.map[index];
-      const attrs = table.nodeAt(pos)!.attrs;
-      tr.setNodeMarkup(tableStart + pos, null, {
-        ...attrs,
-        rowspan: attrs.rowspan + 1,
-      });
-      col += attrs.colspan - 1;
-    } else {
-      const type =
-        refRow == null
-          ? tableNodeTypes(table.type.schema).cell
-          : table.nodeAt(map.map[index + refRow * map.width])?.type;
-      const node = type?.createAndFill();
-      if (node) cells.push(node);
-    }
+    const type =
+      refRow == null
+        ? tableNodeTypes(table.type.schema).cell
+        : table.nodeAt(map.map[index + refRow * map.width])?.type;
+    const node = type?.createAndFill();
+    if (node) cells.push(node);
   }
   tr.insert(rowPos, tableNodeTypes(table.type.schema).row.create(null, cells));
   return tr;
@@ -284,46 +241,17 @@ export function addRowAfter(
  */
 export function removeRow(
   tr: Transaction,
-  { map, table, tableStart }: TableRect,
+  { table, tableStart }: TableRect,
   row: number,
 ): void {
   let rowPos = 0;
-  for (let i = 0; i < row; i++) rowPos += table.child(i).nodeSize;
+  for (let i = 0; i < row; i++) {
+    rowPos += table.child(i).nodeSize;
+  }
   const nextRow = rowPos + table.child(row).nodeSize;
 
-  const mapFrom = tr.mapping.maps.length;
+  // 단순히 해당 행을 삭제합니다.
   tr.delete(rowPos + tableStart, nextRow + tableStart);
-
-  const seen = new Set<number>();
-
-  for (let col = 0, index = row * map.width; col < map.width; col++, index++) {
-    const pos = map.map[index];
-
-    // Skip cells that are checked already
-    if (seen.has(pos)) continue;
-    seen.add(pos);
-
-    if (row > 0 && pos == map.map[index - map.width]) {
-      // If this cell starts in the row above, simply reduce its rowspan
-      const attrs = table.nodeAt(pos)!.attrs as CellAttrs;
-      tr.setNodeMarkup(tr.mapping.slice(mapFrom).map(pos + tableStart), null, {
-        ...attrs,
-        rowspan: attrs.rowspan - 1,
-      });
-      col += attrs.colspan - 1;
-    } else if (row < map.height && pos == map.map[index + map.width]) {
-      // Else, if it continues in the row below, it has to be moved down
-      const cell = table.nodeAt(pos)!;
-      const attrs = cell.attrs as CellAttrs;
-      const copy = cell.type.create(
-        { ...attrs, rowspan: cell.attrs.rowspan - 1 },
-        cell.content,
-      );
-      const newPos = map.positionAt(row + 1, col, table);
-      tr.insert(tr.mapping.slice(mapFrom).map(tableStart + newPos), copy);
-      col += attrs.colspan - 1;
-    }
-  }
 }
 
 /**
@@ -402,75 +330,54 @@ export function mergeCells(
   dispatch?: (tr: Transaction) => void,
 ): boolean {
   const sel = state.selection;
+  // 셀 선택 확인
   if (
     !(sel instanceof CellSelection) ||
-    sel.$anchorCell.pos == sel.$headCell.pos
-  )
+    sel.$anchorCell.pos === sel.$headCell.pos
+  ) {
     return false;
-  const rect = selectedRect(state),
-    { map } = rect;
-  if (cellsOverlapRectangle(map, rect)) return false;
+  }
+
   if (dispatch) {
+    const rect = selectedRect(state);
     const tr = state.tr;
-    const seen: Record<number, boolean> = {};
     let content = Fragment.empty;
-    let mergedPos: number | undefined;
-    let mergedCell: Node | undefined;
+    let firstCellPos: number | undefined;
+
+    // 선택된 모든 셀의 내용을 모읍니다.
     for (let row = rect.top; row < rect.bottom; row++) {
       for (let col = rect.left; col < rect.right; col++) {
-        const cellPos = map.map[row * map.width + col];
+        const cellPos = rect.map.map[row * rect.map.width + col];
         const cell = rect.table.nodeAt(cellPos);
-        if (seen[cellPos] || !cell) continue;
-        seen[cellPos] = true;
-        if (mergedPos == null) {
-          mergedPos = cellPos;
-          mergedCell = cell;
+        if (!cell) continue;
+
+        if (firstCellPos === undefined) {
+          firstCellPos = cellPos; // 첫 번째 셀 위치 저장
         } else {
-          if (!isEmpty(cell)) content = content.append(cell.content);
-          const mapped = tr.mapping.map(cellPos + rect.tableStart);
-          tr.delete(mapped, mapped + cell.nodeSize);
+          content = content.append(cell.content); // 내용 추가
+          tr.delete(
+            cellPos + rect.tableStart,
+            cellPos + rect.tableStart + cell.nodeSize,
+          ); // 나머지 셀 삭제
         }
       }
     }
-    if (mergedPos == null || mergedCell == null) {
-      return true;
+
+    // 첫 번째 셀에 모든 내용을 삽입합니다.
+    if (firstCellPos !== undefined) {
+      tr.replaceWith(
+        firstCellPos + rect.tableStart,
+        firstCellPos + rect.tableStart + 1,
+        content,
+      );
+      tr.setSelection(
+        new CellSelection(tr.doc.resolve(firstCellPos + rect.tableStart)),
+      );
     }
 
-    tr.setNodeMarkup(mergedPos + rect.tableStart, null, {
-      ...addColSpan(
-        mergedCell.attrs as CellAttrs,
-        mergedCell.attrs.colspan,
-        rect.right - rect.left - mergedCell.attrs.colspan,
-      ),
-      rowspan: rect.bottom - rect.top,
-    });
-    if (content.size) {
-      const end = mergedPos + 1 + mergedCell.content.size;
-      const start = isEmpty(mergedCell) ? mergedPos + 1 : end;
-      tr.replaceWith(start + rect.tableStart, end + rect.tableStart, content);
-    }
-    tr.setSelection(
-      new CellSelection(tr.doc.resolve(mergedPos + rect.tableStart)),
-    );
     dispatch(tr);
   }
   return true;
-}
-
-/**
- * Split a selected cell, whose rowpan or colspan is greater than one,
- * into smaller cells. Use the first cell type for the new cells.
- *
- * @public
- */
-export function splitCell(
-  state: EditorState,
-  dispatch?: (tr: Transaction) => void,
-): boolean {
-  const nodeTypes = tableNodeTypes(state.schema);
-  return splitCellWithType(({ node }) => {
-    return nodeTypes[node.type.spec.tableRole as TableRole];
-  })(state, dispatch);
 }
 
 /**
@@ -480,81 +387,6 @@ export interface GetCellTypeOptions {
   node: Node;
   row: number;
   col: number;
-}
-
-/**
- * Split a selected cell, whose rowpan or colspan is greater than one,
- * into smaller cells with the cell type (th, td) returned by getType function.
- *
- * @public
- */
-export function splitCellWithType(
-  getCellType: (options: GetCellTypeOptions) => NodeType,
-): Command {
-  return (state, dispatch) => {
-    const sel = state.selection;
-    let cellNode: Node | null | undefined;
-    let cellPos: number | undefined;
-    if (!(sel instanceof CellSelection)) {
-      cellNode = cellWrapping(sel.$from);
-      if (!cellNode) return false;
-      cellPos = cellAround(sel.$from)?.pos;
-    } else {
-      if (sel.$anchorCell.pos != sel.$headCell.pos) return false;
-      cellNode = sel.$anchorCell.nodeAfter;
-      cellPos = sel.$anchorCell.pos;
-    }
-    if (cellNode == null || cellPos == null) {
-      return false;
-    }
-    if (cellNode.attrs.colspan == 1 && cellNode.attrs.rowspan == 1) {
-      return false;
-    }
-    if (dispatch) {
-      let baseAttrs = cellNode.attrs;
-      const attrs = [];
-      const colwidth = baseAttrs.colwidth;
-      if (baseAttrs.rowspan > 1) baseAttrs = { ...baseAttrs, rowspan: 1 };
-      if (baseAttrs.colspan > 1) baseAttrs = { ...baseAttrs, colspan: 1 };
-      const rect = selectedRect(state),
-        tr = state.tr;
-      for (let i = 0; i < rect.right - rect.left; i++)
-        attrs.push(
-          colwidth
-            ? {
-                ...baseAttrs,
-                colwidth: colwidth && colwidth[i] ? [colwidth[i]] : null,
-              }
-            : baseAttrs,
-        );
-      let lastCell;
-      for (let row = rect.top; row < rect.bottom; row++) {
-        let pos = rect.map.positionAt(row, rect.left, rect.table);
-        if (row == rect.top) pos += cellNode.nodeSize;
-        for (let col = rect.left, i = 0; col < rect.right; col++, i++) {
-          if (col == rect.left && row == rect.top) continue;
-          tr.insert(
-            (lastCell = tr.mapping.map(pos + rect.tableStart, 1)),
-            getCellType({ node: cellNode, row, col }).createAndFill(attrs[i])!,
-          );
-        }
-      }
-      tr.setNodeMarkup(
-        cellPos,
-        getCellType({ node: cellNode, row: rect.top, col: rect.left }),
-        attrs[0],
-      );
-      if (sel instanceof CellSelection)
-        tr.setSelection(
-          new CellSelection(
-            tr.doc.resolve(sel.$anchorCell.pos),
-            lastCell ? tr.doc.resolve(lastCell) : undefined,
-          ),
-        );
-      dispatch(tr);
-    }
-    return true;
-  };
 }
 
 /**
@@ -684,7 +516,6 @@ export function toggleHeader(
   options = options || { useDeprecatedLogic: false };
 
   if (options.useDeprecatedLogic) return deprecated_toggleHeader(type);
-
   return function (state, dispatch) {
     if (!isInTable(state)) return false;
     if (dispatch) {
@@ -759,7 +590,6 @@ export function toggleHeader(
 export const toggleHeaderRow: Command = toggleHeader('row', {
   useDeprecatedLogic: true,
 });
-
 /**
  * Toggles whether the selected column contains header cells.
  *
@@ -768,7 +598,6 @@ export const toggleHeaderRow: Command = toggleHeader('row', {
 export const toggleHeaderColumn: Command = toggleHeader('column', {
   useDeprecatedLogic: true,
 });
-
 /**
  * Toggles whether the selected cells are header cells.
  *

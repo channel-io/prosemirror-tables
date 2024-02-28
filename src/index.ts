@@ -18,12 +18,12 @@ import { tableEditingKey } from './util';
 
 export { CellBookmark, CellSelection } from './cellselection';
 export type { CellSelectionJSON } from './cellselection';
-export {
-  columnResizing,
-  columnResizingPluginKey,
-  ResizeState,
-} from './columnresizing';
-export type { ColumnResizingOptions, Dragging } from './columnresizing';
+// export {
+//   columnResizing,
+//   columnResizingPluginKey,
+//   ResizeState,
+// } from './columnresizing';
+// export type { ColumnResizingOptions, Dragging } from './columnresizing';
 export * from './commands';
 export {
   clipCells as __clipCells,
@@ -32,20 +32,12 @@ export {
 } from './copypaste';
 export type { Area as __Area } from './copypaste';
 export type { Direction } from './input';
-export { tableNodes, tableNodeTypes } from './schema';
-export type {
-  CellAttributes,
-  getFromDOM,
-  setDOMAttr,
-  TableNodes,
-  TableNodesOptions,
-  TableRole,
-} from './schema';
+export { tableNodeTypes } from './schema';
+export type { TableRole } from './schema';
 export { TableMap } from './tablemap';
-export type { ColWidths, Problem, Rect } from './tablemap';
-export { TableView, updateColumnsOnResize } from './tableview';
+export type { Problem, Rect } from './tablemap';
+// export { TableView, updateColumnsOnResize } from './tableview';
 export {
-  addColSpan,
   cellAround,
   colCount,
   columnIsHeader,
@@ -55,7 +47,6 @@ export {
   moveCellForward,
   nextCell,
   pointsAtCell,
-  removeColSpan,
   selectionCell,
 } from './util';
 export type { MutableAttrs } from './util';

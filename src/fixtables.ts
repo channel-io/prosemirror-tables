@@ -7,7 +7,6 @@ import { Node } from 'prosemirror-model';
 import { EditorState, PluginKey, Transaction } from 'prosemirror-state';
 import { tableNodeTypes, TableRole } from './schema';
 import { TableMap } from './tablemap';
-import { CellAttrs, removeColSpan } from './util';
 
 /**
  * @public
@@ -91,29 +90,8 @@ export function fixTable(
     if (prob.type == 'collision') {
       const cell = table.nodeAt(prob.pos);
       if (!cell) continue;
-      const attrs = cell.attrs as CellAttrs;
-      for (let j = 0; j < attrs.rowspan; j++) mustAdd[prob.row + j] += prob.n;
-      tr.setNodeMarkup(
-        tr.mapping.map(tablePos + 1 + prob.pos),
-        null,
-        removeColSpan(attrs, attrs.colspan - prob.n, prob.n),
-      );
     } else if (prob.type == 'missing') {
       mustAdd[prob.row] += prob.n;
-    } else if (prob.type == 'overlong_rowspan') {
-      const cell = table.nodeAt(prob.pos);
-      if (!cell) continue;
-      tr.setNodeMarkup(tr.mapping.map(tablePos + 1 + prob.pos), null, {
-        ...cell.attrs,
-        rowspan: cell.attrs.rowspan - prob.n,
-      });
-    } else if (prob.type == 'colwidth mismatch') {
-      const cell = table.nodeAt(prob.pos);
-      if (!cell) continue;
-      tr.setNodeMarkup(tr.mapping.map(tablePos + 1 + prob.pos), null, {
-        ...cell.attrs,
-        colwidth: prob.colwidth,
-      });
     }
   }
   let first, last;
@@ -122,6 +100,7 @@ export function fixTable(
       if (first == null) first = i;
       last = i;
     }
+
   // Add the necessary cells, using a heuristic for whether to add the
   // cells at the start or end of the rows (if it looks like a 'bite'
   // was taken out of the table, add cells at the start of the row

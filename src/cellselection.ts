@@ -16,7 +16,7 @@ import { Decoration, DecorationSet, DecorationSource } from 'prosemirror-view';
 
 import { Mappable } from 'prosemirror-transform';
 import { TableMap } from './tablemap';
-import { CellAttrs, inSameTable, pointsAtCell, removeColSpan } from './util';
+import { CellAttrs, inSameTable, pointsAtCell } from './util';
 
 /**
  * @public
@@ -133,17 +133,8 @@ export class CellSelection extends Selection {
         const extraRight = cellRect.right - rect.right;
 
         if (extraLeft > 0 || extraRight > 0) {
-          let attrs = cell.attrs as CellAttrs;
-          if (extraLeft > 0) {
-            attrs = removeColSpan(attrs, 0, extraLeft);
-          }
-          if (extraRight > 0) {
-            attrs = removeColSpan(
-              attrs,
-              attrs.colspan - extraRight,
-              extraRight,
-            );
-          }
+          const attrs = cell.attrs as CellAttrs;
+
           if (cellRect.left < rect.left) {
             cell = cell.type.createAndFill(attrs);
             if (!cell) {
@@ -158,9 +149,6 @@ export class CellSelection extends Selection {
         if (cellRect.top < rect.top || cellRect.bottom > rect.bottom) {
           const attrs = {
             ...cell.attrs,
-            rowspan:
-              Math.min(cellRect.bottom, rect.bottom) -
-              Math.max(cellRect.top, rect.top),
           };
           if (cellRect.top < rect.top) {
             cell = cell.type.createAndFill(attrs)!;
@@ -224,9 +212,8 @@ export class CellSelection extends Selection {
     const headTop = this.$headCell.index(-1);
     if (Math.min(anchorTop, headTop) > 0) return false;
 
-    const anchorBottom = anchorTop + this.$anchorCell.nodeAfter!.attrs.rowspan;
-    const headBottom = headTop + this.$headCell.nodeAfter!.attrs.rowspan;
-
+    const anchorBottom = anchorTop + (this.$anchorCell.nodeAfter ? 1 : 0);
+    const headBottom = headTop + (this.$headCell.nodeAfter ? 1 : 0);
     return (
       Math.max(anchorBottom, headBottom) == this.$headCell.node(-1).childCount
     );
@@ -277,8 +264,8 @@ export class CellSelection extends Selection {
     const headLeft = map.colCount(this.$headCell.pos - tableStart);
     if (Math.min(anchorLeft, headLeft) > 0) return false;
 
-    const anchorRight = anchorLeft + this.$anchorCell.nodeAfter!.attrs.colspan;
-    const headRight = headLeft + this.$headCell.nodeAfter!.attrs.colspan;
+    const anchorRight = anchorLeft + (this.$anchorCell.nodeAfter ? 1 : 0);
+    const headRight = headLeft + (this.$headCell.nodeAfter ? 1 : 0);
     return Math.max(anchorRight, headRight) == map.width;
   }
 
